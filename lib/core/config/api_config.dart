@@ -14,5 +14,14 @@ class ApiConfig {
     }
   }
 
+  static String get apiRootUrl {
+    final value = apiBaseUrl;
+    const suffix = '/api/v1';
+    if (value.endsWith(suffix)) {
+      return value.substring(0, value.length - suffix.length);
+    }
+    return value;
+  }
+
   const ApiConfig._();
 }
