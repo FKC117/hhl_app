@@ -63,13 +63,20 @@ class DiagnosticsRepository {
     required int labId,
     required List<int> tests,
     required String patientNote,
+    String? preferredDate,
     required String accessToken,
   }) async {
     final json = await _apiClient.postJson(
       ApiConfig.apiBaseUrl,
       '/diagnostics/orders/draft/',
       headers: {'Authorization': 'Bearer $accessToken'},
-      body: {'lab': labId, 'tests': tests, 'patient_note': patientNote},
+      body: {
+        'lab': labId,
+        'tests': tests,
+        'patient_note': patientNote,
+        if (preferredDate != null && preferredDate.trim().isNotEmpty)
+          'preferred_date': preferredDate.trim(),
+      },
     );
 
     return DiagnosticDraftResult.fromJson(json);
@@ -131,6 +138,7 @@ class DiagnosticTest {
     required this.department,
     required this.price,
     required this.description,
+    required this.preparationNote,
   });
 
   final int id;
@@ -138,6 +146,7 @@ class DiagnosticTest {
   final String department;
   final String price;
   final String description;
+  final String preparationNote;
 
   factory DiagnosticTest.fromJson(Map<String, dynamic> json) {
     final id = json['id'] is int
@@ -170,6 +179,10 @@ class DiagnosticTest {
         '${json['instructions'] ?? ''}',
         'Diagnostic test details will appear here when the backend returns them.',
       ]),
+      preparationNote: _firstNonEmpty([
+        '${json['preparation_note'] ?? ''}',
+        '${json['instructions'] ?? ''}',
+      ]),
     );
   }
 }
@@ -180,12 +193,14 @@ class DiagnosticDraftResult {
     required this.status,
     this.statusDisplay = '',
     this.totalAmount = '',
+    this.preferredDate = '',
   });
 
   final int id;
   final String status;
   final String statusDisplay;
   final String totalAmount;
+  final String preferredDate;
 
   factory DiagnosticDraftResult.fromJson(Map<String, dynamic> json) {
     return DiagnosticDraftResult(
@@ -195,6 +210,7 @@ class DiagnosticDraftResult {
       status: '${json['status'] ?? 'draft'}'.trim(),
       statusDisplay: '${json['status_display'] ?? ''}'.trim(),
       totalAmount: _formatMoney('${json['total_amount'] ?? ''}'.trim()),
+      preferredDate: '${json['preferred_date'] ?? ''}'.trim(),
     );
   }
 }

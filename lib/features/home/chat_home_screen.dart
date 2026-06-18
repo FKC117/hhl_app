@@ -22,6 +22,10 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   final ChatController _controller = ChatController();
   final InvoiceDownloadController _invoiceDownloadController =
       InvoiceDownloadController();
+  final Map<int, ChatCardItem> _selectedDiagnosticTests = <int, ChatCardItem>{};
+
+  bool _isPreparingDiagnosticCheckout = false;
+  DateTime? _selectedDiagnosticDate;
 
   static const _quickPrompts = <_QuickPrompt>[
     _QuickPrompt(
@@ -102,6 +106,11 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   }
 
   Future<void> _handleCardAction(ChatCardItem item) async {
+    if (_isDiagnosticTestItem(item)) {
+      _toggleDiagnosticTest(item);
+      return;
+    }
+
     if (item.paymentSourceType.isNotEmpty && item.paymentConfirmUrl.isNotEmpty) {
       final session = AppSessionScope.of(context);
       await _controller.completePayment(item: item, session: session);
@@ -139,6 +148,101 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
     if (item.actionPrompt.isNotEmpty) {
       await _sendMessage(item.actionPrompt);
     }
+  }
+
+  void _toggleDiagnosticTest(ChatCardItem item) {
+    if (item.itemId <= 0 || item.labId <= 0) {
+      return;
+    }
+
+    final existing = _selectedDiagnosticTests[item.itemId];
+    if (existing != null) {
+      setState(() {
+        _selectedDiagnosticTests.remove(item.itemId);
+      });
+      return;
+    }
+
+    final activeLabId = _selectedDiagnosticLabId;
+    if (activeLabId != null && activeLabId != item.labId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please keep test booking within one lab. Remove the current selection first to switch labs.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _selectedDiagnosticTests[item.itemId] = item;
+    });
+  }
+
+  Future<void> _continueDiagnosticCheckout() async {
+    if (_selectedDiagnosticTests.isEmpty || _isPreparingDiagnosticCheckout) {
+      return;
+    }
+    if (_selectedDiagnosticDateIso.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose a preferred test date before continuing.'),
+        ),
+      );
+      return;
+    }
+
+    final labId = _selectedDiagnosticLabId;
+    if (labId == null) {
+      return;
+    }
+
+    final selectedTests = _selectedDiagnosticTests.values.toList();
+    final session = AppSessionScope.of(context);
+
+    setState(() {
+      _isPreparingDiagnosticCheckout = true;
+    });
+
+    await _controller.prepareDiagnosticCheckout(
+      labId: labId,
+      labName: _selectedDiagnosticLabName,
+      tests: selectedTests,
+      session: session,
+      preferredDate: _selectedDiagnosticDateIso,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPreparingDiagnosticCheckout = false;
+      if (_controller.errorMessage == null) {
+        _selectedDiagnosticTests.clear();
+        _selectedDiagnosticDate = null;
+      }
+    });
+  }
+
+  Future<void> _pickDiagnosticDate() async {
+    final now = DateTime.now();
+    final firstDate = DateTime(now.year, now.month, now.day);
+    final initialDate = _selectedDiagnosticDate ?? firstDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate.isBefore(firstDate) ? firstDate : initialDate,
+      firstDate: firstDate,
+      lastDate: firstDate.add(const Duration(days: 60)),
+      helpText: 'Choose test date',
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _selectedDiagnosticDate = picked;
+    });
   }
 
   Future<void> _downloadInvoice(ChatCardItem item) async {
@@ -216,6 +320,36 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
     }
   }
 
+  int? get _selectedDiagnosticLabId {
+    if (_selectedDiagnosticTests.isEmpty) {
+      return null;
+    }
+    return _selectedDiagnosticTests.values.first.labId;
+  }
+
+  String get _selectedDiagnosticLabName {
+    if (_selectedDiagnosticTests.isEmpty) {
+      return '';
+    }
+    return _selectedDiagnosticTests.values.first.labName;
+  }
+
+  String get _selectedDiagnosticTotal {
+    var total = 0.0;
+    for (final item in _selectedDiagnosticTests.values) {
+      total += _extractAmount(item.badge);
+    }
+    return total <= 0 ? '' : 'BDT ${total.toStringAsFixed(2)}';
+  }
+
+  String get _selectedDiagnosticDateIso {
+    final date = _selectedDiagnosticDate;
+    if (date == null) {
+      return '';
+    }
+    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.of(context).size.width < 840;
@@ -258,10 +392,29 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                 onCardAction: _handleCardAction,
                 onInvoiceDownload: _downloadInvoice,
                 activeInvoiceId: _invoiceDownloadController.activeInvoiceId,
+                selectedDiagnosticTestIds: _selectedDiagnosticTests.keys.toSet(),
                 onConfirmJob: _confirmJob,
                 onCancelJob: _cancelJob,
               ),
             ),
+            if (_selectedDiagnosticTests.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _DiagnosticSelectionPanel(
+                tests: _selectedDiagnosticTests.values.toList(),
+                labName: _selectedDiagnosticLabName,
+                total: _selectedDiagnosticTotal,
+                preferredDate: _selectedDiagnosticDateIso,
+                isBusy: _isPreparingDiagnosticCheckout || _controller.isSending,
+                onPickDate: _pickDiagnosticDate,
+                onContinue: _continueDiagnosticCheckout,
+                onClear: () {
+                  setState(() {
+                    _selectedDiagnosticTests.clear();
+                    _selectedDiagnosticDate = null;
+                  });
+                },
+              ),
+            ],
             const SizedBox(height: 10),
             _Composer(
               controller: _messageController,
@@ -328,10 +481,29 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
               onCardAction: _handleCardAction,
               onInvoiceDownload: _downloadInvoice,
               activeInvoiceId: _invoiceDownloadController.activeInvoiceId,
+              selectedDiagnosticTestIds: _selectedDiagnosticTests.keys.toSet(),
               onConfirmJob: _confirmJob,
               onCancelJob: _cancelJob,
             ),
           ),
+          if (_selectedDiagnosticTests.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _DiagnosticSelectionPanel(
+              tests: _selectedDiagnosticTests.values.toList(),
+              labName: _selectedDiagnosticLabName,
+              total: _selectedDiagnosticTotal,
+              preferredDate: _selectedDiagnosticDateIso,
+              isBusy: _isPreparingDiagnosticCheckout || _controller.isSending,
+              onPickDate: _pickDiagnosticDate,
+              onContinue: _continueDiagnosticCheckout,
+              onClear: () {
+                setState(() {
+                  _selectedDiagnosticTests.clear();
+                  _selectedDiagnosticDate = null;
+                });
+              },
+            ),
+          ],
           const SizedBox(height: 12),
           _Composer(
             controller: _messageController,
@@ -354,6 +526,7 @@ class _ChatSurface extends StatelessWidget {
     required this.onCardAction,
     required this.onInvoiceDownload,
     required this.activeInvoiceId,
+    required this.selectedDiagnosticTestIds,
     required this.onConfirmJob,
     required this.onCancelJob,
     this.onOpenSection,
@@ -367,6 +540,7 @@ class _ChatSurface extends StatelessWidget {
   final Future<void> Function(ChatCardItem item) onCardAction;
   final Future<void> Function(ChatCardItem item) onInvoiceDownload;
   final int? activeInvoiceId;
+  final Set<int> selectedDiagnosticTestIds;
   final Future<void> Function(String jobId) onConfirmJob;
   final Future<void> Function(String jobId) onCancelJob;
   final ValueChanged<String>? onOpenSection;
@@ -401,6 +575,7 @@ class _ChatSurface extends StatelessWidget {
                   onCardAction: onCardAction,
                   onInvoiceDownload: onInvoiceDownload,
                   activeInvoiceId: activeInvoiceId,
+                  selectedDiagnosticTestIds: selectedDiagnosticTestIds,
                   onConfirmJob: onConfirmJob,
                   onCancelJob: onCancelJob,
                   onOpenSection: onOpenSection,
@@ -581,6 +756,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onCardAction,
     required this.onInvoiceDownload,
     required this.activeInvoiceId,
+    required this.selectedDiagnosticTestIds,
     required this.onConfirmJob,
     required this.onCancelJob,
     this.onOpenSection,
@@ -592,6 +768,7 @@ class _MessageBubble extends StatelessWidget {
   final Future<void> Function(ChatCardItem item) onCardAction;
   final Future<void> Function(ChatCardItem item) onInvoiceDownload;
   final int? activeInvoiceId;
+  final Set<int> selectedDiagnosticTestIds;
   final Future<void> Function(String jobId) onConfirmJob;
   final Future<void> Function(String jobId) onCancelJob;
   final ValueChanged<String>? onOpenSection;
@@ -604,6 +781,12 @@ class _MessageBubble extends StatelessWidget {
       previousUserPrompt: previousUserPrompt,
     );
     final hasSlotCards = _containsBookableSlotItems(visibleItems);
+    final dateSuggestionItems = visibleItems
+        .where((item) => item.blockType == 'date_suggestions')
+        .toList();
+    final nonDateSuggestionItems = visibleItems
+        .where((item) => item.blockType != 'date_suggestions')
+        .toList();
 
     return Align(
       alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
@@ -661,11 +844,24 @@ class _MessageBubble extends StatelessWidget {
                     else
                       Column(
                         children: [
-                          for (final item in visibleItems) ...[
+                          if (dateSuggestionItems.isNotEmpty) ...[
+                            _DateSuggestionScroller(
+                              items: dateSuggestionItems,
+                              onCardAction: onCardAction,
+                            ),
+                            if (nonDateSuggestionItems.isNotEmpty)
+                              const SizedBox(height: 8),
+                          ],
+                          for (final item in nonDateSuggestionItems) ...[
                             _AgentCard(
                               item: item,
                               onAction: _isInteractiveChatItem(item)
                                   ? () => onCardAction(item)
+                                  : null,
+                              actionLabelOverride: _isDiagnosticTestItem(item)
+                                  ? (selectedDiagnosticTestIds.contains(item.itemId)
+                                        ? 'Remove test'
+                                        : 'Add test')
                                   : null,
                               onDownload: item.downloadPath.isNotEmpty
                                   ? () => onInvoiceDownload(item)
@@ -837,10 +1033,121 @@ class _SlotCardScrollerState extends State<_SlotCardScroller> {
   }
 }
 
+class _DateSuggestionScroller extends StatefulWidget {
+  const _DateSuggestionScroller({
+    required this.items,
+    required this.onCardAction,
+  });
+
+  final List<ChatCardItem> items;
+  final Future<void> Function(ChatCardItem item) onCardAction;
+
+  @override
+  State<_DateSuggestionScroller> createState() => _DateSuggestionScrollerState();
+}
+
+class _DateSuggestionScrollerState extends State<_DateSuggestionScroller> {
+  late final PageController _pageController;
+  int _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: 0.8);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pageCount = widget.items.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 210,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: pageCount,
+            onPageChanged: (index) {
+              setState(() => _pageIndex = index);
+            },
+            itemBuilder: (context, index) {
+              final item = widget.items[index];
+              return Padding(
+                padding: EdgeInsets.only(right: index == pageCount - 1 ? 0 : 10),
+                child: _AgentCard(
+                  item: item,
+                  onAction: item.actionPrompt.isEmpty
+                      ? null
+                      : () => widget.onCardAction(item),
+                ),
+              );
+            },
+          ),
+        ),
+        if (pageCount > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'Date ${_pageIndex + 1} of $pageCount',
+                style: const TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _pageIndex == 0
+                    ? null
+                    : () {
+                        _pageController.previousPage(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                        );
+                      },
+                icon: const Icon(Icons.chevron_left_rounded),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                onPressed: _pageIndex >= pageCount - 1
+                    ? null
+                    : () {
+                        _pageController.nextPage(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                        );
+                      },
+                icon: const Icon(Icons.chevron_right_rounded),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const Text(
+            'Swipe sideways to choose a suggested date quickly.',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _AgentCard extends StatelessWidget {
   const _AgentCard({
     required this.item,
     this.onAction,
+    this.actionLabelOverride,
     this.onDownload,
     this.isDownloading = false,
     this.onOpenSection,
@@ -848,6 +1155,7 @@ class _AgentCard extends StatelessWidget {
 
   final ChatCardItem item;
   final VoidCallback? onAction;
+  final String? actionLabelOverride;
   final VoidCallback? onDownload;
   final bool isDownloading;
   final VoidCallback? onOpenSection;
@@ -855,6 +1163,7 @@ class _AgentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primaryTap = onAction ?? onOpenSection;
+    final actionLabel = actionLabelOverride ?? item.actionLabel;
 
     return InkWell(
       onTap: primaryTap,
@@ -931,13 +1240,13 @@ class _AgentCard extends StatelessWidget {
                 ),
               ),
             ],
-            if (item.actionLabel.isNotEmpty) ...[
+            if (actionLabel.isNotEmpty) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.tonal(
                   onPressed: onAction,
-                  child: Text(item.actionLabel),
+                  child: Text(actionLabel),
                 ),
               ),
             ],
@@ -1191,6 +1500,153 @@ class _TypingDot extends StatelessWidget {
   }
 }
 
+class _DiagnosticSelectionPanel extends StatelessWidget {
+  const _DiagnosticSelectionPanel({
+    required this.tests,
+    required this.labName,
+    required this.total,
+    required this.preferredDate,
+    required this.isBusy,
+    required this.onPickDate,
+    required this.onContinue,
+    required this.onClear,
+  });
+
+  final List<ChatCardItem> tests;
+  final String labName;
+  final String total;
+  final String preferredDate;
+  final bool isBusy;
+  final VoidCallback onPickDate;
+  final VoidCallback onContinue;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final preparationNotes = tests
+        .map((item) => item.preparationNote.trim())
+        .where((note) => note.isNotEmpty)
+        .toSet()
+        .toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFA),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFDCE8E6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Selected tests',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: isBusy ? null : onClear,
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+          if (labName.isNotEmpty)
+            Text(
+              labName,
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: isBusy ? null : onPickDate,
+            icon: const Icon(Icons.calendar_month_outlined),
+            label: Text(
+              preferredDate.isEmpty
+                  ? 'Choose preferred test date'
+                  : 'Preferred date: $preferredDate',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            tests.map((item) => item.title).join(', '),
+            style: const TextStyle(color: AppColors.muted, height: 1.4),
+          ),
+          if (preparationNotes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Preparation notes',
+              style: TextStyle(
+                color: AppColors.ink,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final note in preparationNotes) ...[
+              Text(
+                '• $note',
+                style: const TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+              const SizedBox(height: 4),
+            ],
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${tests.length} test${tests.length == 1 ? '' : 's'} selected',
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (total.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5F5F1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    total,
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: isBusy ? null : onContinue,
+              child: Text(
+                isBusy ? 'Preparing checkout...' : 'Continue to payment',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
@@ -1341,7 +1797,17 @@ bool _isBookableSlotItem(ChatCardItem item) {
 bool _isInteractiveChatItem(ChatCardItem item) {
   return item.actionPrompt.isNotEmpty ||
       item.paymentSourceType.isNotEmpty ||
-      item.blockType == 'date_picker';
+      item.blockType == 'date_picker' ||
+      _isDiagnosticTestItem(item);
+}
+
+bool _isDiagnosticTestItem(ChatCardItem item) {
+  return item.blockType == 'test_cards' && item.itemId > 0 && item.labId > 0;
+}
+
+double _extractAmount(String raw) {
+  final normalized = raw.replaceAll(RegExp(r'[^0-9.]'), '');
+  return double.tryParse(normalized) ?? 0;
 }
 
 String _preferredPeriodFromPrompt(String prompt) {

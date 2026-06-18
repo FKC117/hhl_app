@@ -4,12 +4,14 @@ import '../../../core/api/api_client.dart';
 import '../../../core/session/app_session.dart';
 import '../data/chat_models.dart';
 import '../data/chat_repository.dart';
+import '../../diagnostics/data/diagnostics_repository.dart';
 import '../../invoices/data/invoice_item.dart';
 import '../../invoices/data/invoices_repository.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({ChatRepository? repository})
     : _repository = repository ?? ChatRepository(),
+      _diagnosticsRepository = DiagnosticsRepository(),
       _invoicesRepository = InvoicesRepository() {
     _messages.add(
       const ChatMessageRecord(
@@ -23,6 +25,7 @@ class ChatController extends ChangeNotifier {
   }
 
   final ChatRepository _repository;
+  final DiagnosticsRepository _diagnosticsRepository;
   final InvoicesRepository _invoicesRepository;
   final List<ChatMessageRecord> _messages = [];
 
@@ -269,28 +272,97 @@ class ChatController extends ChangeNotifier {
 
       final sourceId = int.tryParse(item.paymentSourceId) ?? 0;
       if (sourceId > 0) {
-        final invoices = await session.withFreshToken(
-          (accessToken) => _invoicesRepository.fetchInvoices(accessToken: accessToken),
-        );
-        final matchingInvoice = _findMatchingInvoice(
-          invoices,
+        await _appendMatchingInvoice(
+          session: session,
           sourceType: item.paymentSourceType,
           sourceId: sourceId,
         );
-        if (matchingInvoice != null) {
-          _messages.add(
-            ChatMessageRecord(
-              id: 'local-invoice-${matchingInvoice.id}-${_localMessageSeed++}',
-              role: 'assistant',
-              text: 'Your invoice is ready.',
-              messageType: 'invoice_card',
-              items: [_invoiceToChatCard(matchingInvoice)],
-            ),
-          );
-        }
       }
     } on ApiException catch (error) {
       errorMessage = _humanizeAgentError(error);
+    } finally {
+      isSending = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> prepareDiagnosticCheckout({
+    required int labId,
+    required String labName,
+    required List<ChatCardItem> tests,
+    required AppSession session,
+    String preferredDate = '',
+    String patientNote = '',
+  }) async {
+    if (isSending || tests.isEmpty) return;
+
+    isSending = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final testIds = tests
+          .map((item) => item.itemId)
+          .where((id) => id > 0)
+          .toList();
+      final draft = await session.withFreshToken(
+        (accessToken) => _diagnosticsRepository.createDraftOrder(
+          labId: labId,
+          tests: testIds,
+          preferredDate: preferredDate,
+          patientNote: patientNote,
+          accessToken: accessToken,
+        ),
+      );
+
+      final summary = tests.map((item) => item.title).join(', ');
+      final preparationNotes = tests
+          .map((item) => item.preparationNote.trim())
+          .where((note) => note.isNotEmpty)
+          .toSet()
+          .join(' | ');
+      _messages.add(
+        ChatMessageRecord(
+          id: 'local-diagnostic-draft-${draft.id}-${_localMessageSeed++}',
+          role: 'assistant',
+          text: 'Diagnostic order draft ready for confirmation.',
+          messageType: 'diagnostic_payment',
+          items: [
+            ChatCardItem(
+              title: 'Complete payment',
+              subtitle: labName,
+              description: [
+                if (draft.preferredDate.isNotEmpty) 'Date: ${draft.preferredDate}',
+                summary,
+                if (preparationNotes.isNotEmpty)
+                  'Preparation: $preparationNotes',
+              ].join(' | '),
+              badge: draft.totalAmount,
+              trailing: 'No gateway yet. Tapping continue will mark this as paid.',
+              actionLabel: 'Continue',
+              blockType: 'payment_handoff',
+              paymentSourceType: 'DIAGNOSTIC',
+              paymentSourceId: '${draft.id}',
+              paymentGateway: 'manual',
+              paymentInitiateUrl: '/api/v1/payments/initiate/',
+              paymentCompleteUrlTemplate: '/api/v1/payments/{payment_id}/complete/',
+              paymentConfirmUrl: '/api/v1/diagnostics/orders/${draft.id}/confirm/',
+              paymentSuccessMessage: 'Diagnostic order #${draft.id} is now confirmed.',
+              preferredDate: draft.preferredDate,
+            ),
+          ],
+        ),
+      );
+    } on ApiException catch (error) {
+      errorMessage = _humanizeAgentError(error);
+      _messages.add(
+        ChatMessageRecord(
+          id: 'local-diagnostic-error-${_localMessageSeed++}',
+          role: 'assistant',
+          text: errorMessage!,
+          messageType: 'text',
+        ),
+      );
     } finally {
       isSending = false;
       notifyListeners();
@@ -315,7 +387,7 @@ class ChatController extends ChangeNotifier {
     String jobId,
     AppSession session,
   ) async {
-    for (var attempt = 0; attempt < 40; attempt++) {
+    for (var attempt = 0; attempt < 25; attempt++) {
       final result = await session.withFreshToken(
         (accessToken) => _repository.fetchJob(
           jobId: jobId,
@@ -326,10 +398,13 @@ class ChatController extends ChangeNotifier {
         return result.messages;
       }
       final status = (result.jobStatus ?? '').toUpperCase();
+      if (status == 'COMPLETED') {
+        return const [];
+      }
       if (status == 'FAILED' || status == 'CANCELLED') {
         return const [];
       }
-      await Future<void>.delayed(const Duration(milliseconds: 800));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     return const [];
   }
@@ -399,6 +474,34 @@ class ChatController extends ChangeNotifier {
       documentId: invoice.id,
       downloadPath: invoice.downloadPath,
       fileName: invoice.fileName,
+    );
+  }
+
+  Future<void> _appendMatchingInvoice({
+    required AppSession session,
+    required String sourceType,
+    required int sourceId,
+  }) async {
+    final invoices = await session.withFreshToken(
+      (accessToken) => _invoicesRepository.fetchInvoices(accessToken: accessToken),
+    );
+    final matchingInvoice = _findMatchingInvoice(
+      invoices,
+      sourceType: sourceType,
+      sourceId: sourceId,
+    );
+    if (matchingInvoice == null) {
+      return;
+    }
+
+    _messages.add(
+      ChatMessageRecord(
+        id: 'local-invoice-${matchingInvoice.id}-${_localMessageSeed++}',
+        role: 'assistant',
+        text: 'Your invoice is ready.',
+        messageType: 'invoice_card',
+        items: [_invoiceToChatCard(matchingInvoice)],
+      ),
     );
   }
 }

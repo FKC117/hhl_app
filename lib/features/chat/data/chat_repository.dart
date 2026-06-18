@@ -211,7 +211,15 @@ class ChatRepository {
               )
               .toList();
 
-    return ChatSendResult(messages: decorated, jobId: null);
+    return ChatSendResult(
+      messages: decorated,
+      jobId: null,
+      jobStatus: _firstNonEmpty([
+        '${json['status'] ?? ''}',
+        '${output['status'] ?? ''}',
+        '${(json['job'] is Map<String, dynamic> ? (json['job'] as Map<String, dynamic>)['status'] : '')}',
+      ]),
+    );
   }
 
   Future<int> initiateManualPayment({

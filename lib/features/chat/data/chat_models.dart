@@ -144,6 +144,12 @@ class ChatCardItem {
     this.paymentCompleteUrlTemplate = '',
     this.paymentConfirmUrl = '',
     this.paymentSuccessMessage = '',
+    this.itemId = 0,
+    this.labId = 0,
+    this.labName = '',
+    this.sampleType = '',
+    this.preparationNote = '',
+    this.preferredDate = '',
     this.documentId = 0,
     this.downloadPath = '',
     this.fileName = '',
@@ -168,6 +174,12 @@ class ChatCardItem {
   final String paymentCompleteUrlTemplate;
   final String paymentConfirmUrl;
   final String paymentSuccessMessage;
+  final int itemId;
+  final int labId;
+  final String labName;
+  final String sampleType;
+  final String preparationNote;
+  final String preferredDate;
   final int documentId;
   final String downloadPath;
   final String fileName;
@@ -204,6 +216,15 @@ class ChatCardItem {
         '${raw['summary'] ?? ''}',
         '${raw['details'] ?? ''}',
         _joinNonEmpty([
+          '${raw['sample_type'] ?? ''}',
+          '${raw['lab_name'] ?? ''}',
+          '${raw['preparation_note'] ?? raw['instructions'] ?? ''}',
+        ]),
+        _joinNonEmpty([
+          _formatDateLabel('${raw['preferred_date'] ?? ''}'),
+          _formatPreparationNotes(raw['preparation_notes']),
+        ]),
+        _joinNonEmpty([
           '${raw['designation'] ?? ''}',
           '${raw['qualification'] ?? ''}',
           _experienceLabel(raw['experience_years']),
@@ -219,12 +240,15 @@ class ChatCardItem {
         '${raw['price'] ?? ''}',
         '${raw['fee'] ?? ''}',
         '${raw['amount'] ?? ''}',
+        _formatMoney(raw['platform_price']),
+        _formatMoney(raw['mrp']),
         _doctorFeeBadge(raw),
       ]),
       trailing: _firstNonEmpty([
         '${raw['trailing'] ?? ''}',
         '${raw['cta'] ?? ''}',
         '${raw['action_label'] ?? ''}',
+        '${raw['lab_name'] ?? ''}',
         _scheduleSummary(raw['schedule_summaries']),
       ]),
       actionLabel: _firstNonEmpty([
@@ -254,6 +278,19 @@ class ChatCardItem {
           '${raw['payment_complete_url_template'] ?? ''}'.trim(),
       paymentConfirmUrl: '${raw['payment_confirm_url'] ?? ''}'.trim(),
       paymentSuccessMessage: '${raw['payment_success_message'] ?? ''}'.trim(),
+      itemId: raw['id'] is int
+          ? raw['id'] as int
+          : int.tryParse('${raw['id'] ?? '0'}') ?? 0,
+      labId: raw['lab_id'] is int
+          ? raw['lab_id'] as int
+          : int.tryParse('${raw['lab_id'] ?? '0'}') ?? 0,
+      labName: '${raw['lab_name'] ?? ''}'.trim(),
+      sampleType: '${raw['sample_type'] ?? ''}'.trim(),
+      preparationNote: _firstNonEmpty([
+        '${raw['preparation_note'] ?? ''}',
+        '${raw['instructions'] ?? ''}',
+      ]),
+      preferredDate: '${raw['preferred_date'] ?? ''}'.trim(),
       documentId: raw['document_id'] is int
           ? raw['document_id'] as int
           : int.tryParse('${raw['document_id'] ?? raw['id'] ?? '0'}') ?? 0,
@@ -323,6 +360,44 @@ String _doctorFeeBadge(Map<String, dynamic> raw) {
     return 'Offline BDT $offline';
   }
   return '';
+}
+
+String _formatMoney(dynamic raw) {
+  final value = '${raw ?? ''}'.trim();
+  if (value.isEmpty || value.toLowerCase() == 'null') {
+    return '';
+  }
+  if (value.toLowerCase().contains('bdt')) {
+    return value;
+  }
+  return 'BDT $value';
+}
+
+String _formatDateLabel(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty || value.toLowerCase() == 'null') {
+    return '';
+  }
+  return 'Date: $value';
+}
+
+String _formatPreparationNotes(dynamic raw) {
+  if (raw is List) {
+    final parts = raw
+        .map((item) => '${item ?? ''}'.trim())
+        .where((item) => item.isNotEmpty && item.toLowerCase() != 'null')
+        .toList();
+    if (parts.isEmpty) {
+      return '';
+    }
+    return 'Preparation: ${parts.join(' | ')}';
+  }
+
+  final value = '${raw ?? ''}'.trim();
+  if (value.isEmpty || value.toLowerCase() == 'null') {
+    return '';
+  }
+  return 'Preparation: $value';
 }
 
 String _scheduleSummary(dynamic raw) {
@@ -559,7 +634,21 @@ List<dynamic>? _extractItemsFromBlocks(dynamic raw) {
     if (data is Map<String, dynamic>) {
       final nestedItems = _asList(data['items']);
       if (nestedItems != null) {
-        items.addAll(nestedItems);
+        if (type == 'test_cards') {
+          for (final nested in nestedItems) {
+            if (nested is Map<String, dynamic>) {
+              items.add({
+                ...nested,
+                'block_type': type,
+                'action_label': 'Add test',
+              });
+            } else {
+              items.add(nested);
+            }
+          }
+        } else {
+          items.addAll(nestedItems);
+        }
       }
 
       if (type == 'slot_cards') {
@@ -600,6 +689,14 @@ List<dynamic>? _extractItemsFromBlocks(dynamic raw) {
       if (type == 'confirmation_card' || type == 'payment_handoff') {
         final summary = data['summary'];
         final summaryMap = summary is Map<String, dynamic> ? summary : <String, dynamic>{};
+        final testsSummary = _firstNonEmpty([
+          '${summaryMap['tests'] ?? ''}',
+          '${summaryMap['test_names'] ?? ''}',
+        ]);
+        final preferredDate = '${summaryMap['preferred_date'] ?? ''}'.trim();
+        final preparationSummary = _formatPreparationNotes(
+          summaryMap['preparation_notes'],
+        );
         items.add({
           'title': _firstNonEmpty([
             type == 'payment_handoff' ? 'Complete payment' : '',
@@ -613,16 +710,24 @@ List<dynamic>? _extractItemsFromBlocks(dynamic raw) {
             '${summaryMap['department'] ?? ''}',
           ]),
           'description': _joinNonEmpty([
+            preferredDate.isEmpty ? '' : 'Date: $preferredDate',
             '${summaryMap['appointment_date'] ?? ''}',
             '${summaryMap['appointment_time'] ?? ''}',
             '${summaryMap['mode'] ?? ''}',
+            testsSummary,
+            preparationSummary,
             '${summaryMap['patient_note'] ?? ''}',
           ]),
           'badge': _firstNonEmpty([
             '${summaryMap['fee'] ?? ''}',
             '${summaryMap['amount'] ?? ''}',
+            '${summaryMap['total_amount'] ?? ''}',
           ]),
           'trailing': _firstNonEmpty([
+            testsSummary.isNotEmpty && type == 'confirmation_card'
+                ? 'Tests: $testsSummary'
+                : '',
+            preparationSummary,
             type == 'payment_handoff'
                 ? 'No gateway yet. Tapping continue will mark this as paid.'
                 : '',
@@ -637,6 +742,7 @@ List<dynamic>? _extractItemsFromBlocks(dynamic raw) {
               '${data['complete_url_template'] ?? ''}'.trim(),
           'payment_confirm_url': '${data['confirm_url'] ?? ''}'.trim(),
           'payment_success_message': '${data['success_message'] ?? ''}'.trim(),
+          'preferred_date': preferredDate,
         });
       }
 
