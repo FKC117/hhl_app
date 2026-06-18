@@ -4,10 +4,13 @@ import '../../../core/api/api_client.dart';
 import '../../../core/session/app_session.dart';
 import '../data/chat_models.dart';
 import '../data/chat_repository.dart';
+import '../../invoices/data/invoice_item.dart';
+import '../../invoices/data/invoices_repository.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({ChatRepository? repository})
-    : _repository = repository ?? ChatRepository() {
+    : _repository = repository ?? ChatRepository(),
+      _invoicesRepository = InvoicesRepository() {
     _messages.add(
       const ChatMessageRecord(
         id: 'seed-assistant',
@@ -20,6 +23,7 @@ class ChatController extends ChangeNotifier {
   }
 
   final ChatRepository _repository;
+  final InvoicesRepository _invoicesRepository;
   final List<ChatMessageRecord> _messages = [];
 
   String? _sessionId;
@@ -199,6 +203,100 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  Future<void> completePayment({
+    required ChatCardItem item,
+    required AppSession session,
+  }) async {
+    if (isSending) return;
+
+    isSending = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final paymentId = await session.withFreshToken(
+        (accessToken) => _repository.initiateManualPayment(
+          sourceType: item.paymentSourceType,
+          sourceId: item.paymentSourceId,
+          gateway: item.paymentGateway,
+          accessToken: accessToken,
+          initiateUrl: item.paymentInitiateUrl.isEmpty
+              ? '/api/v1/payments/initiate/'
+              : item.paymentInitiateUrl,
+        ),
+      );
+
+      await session.withFreshToken(
+        (accessToken) => _repository.completeManualPayment(
+          paymentId: paymentId,
+          accessToken: accessToken,
+          completeUrlTemplate: item.paymentCompleteUrlTemplate.isEmpty
+              ? '/api/v1/payments/{payment_id}/complete/'
+              : item.paymentCompleteUrlTemplate,
+        ),
+      );
+
+      if (item.paymentConfirmUrl.isNotEmpty) {
+        await session.withFreshToken(
+          (accessToken) => _repository.confirmPaymentSource(
+            confirmUrl: item.paymentConfirmUrl,
+            paymentId: paymentId,
+            accessToken: accessToken,
+          ),
+        );
+      }
+
+      _messages.add(
+        ChatMessageRecord(
+          id: 'local-payment-${_localMessageSeed++}',
+          role: 'assistant',
+          text: item.paymentSuccessMessage.isNotEmpty
+              ? item.paymentSuccessMessage
+              : 'Payment completed and the draft is now confirmed.',
+          messageType: 'payment',
+        ),
+      );
+
+      if (_sessionId != null) {
+        final refreshed = await session.withFreshToken(
+          (accessToken) => _repository.fetchMessages(
+            sessionId: _sessionId!,
+            accessToken: accessToken,
+          ),
+        );
+        _mergeMessages(refreshed);
+      }
+
+      final sourceId = int.tryParse(item.paymentSourceId) ?? 0;
+      if (sourceId > 0) {
+        final invoices = await session.withFreshToken(
+          (accessToken) => _invoicesRepository.fetchInvoices(accessToken: accessToken),
+        );
+        final matchingInvoice = _findMatchingInvoice(
+          invoices,
+          sourceType: item.paymentSourceType,
+          sourceId: sourceId,
+        );
+        if (matchingInvoice != null) {
+          _messages.add(
+            ChatMessageRecord(
+              id: 'local-invoice-${matchingInvoice.id}-${_localMessageSeed++}',
+              role: 'assistant',
+              text: 'Your invoice is ready.',
+              messageType: 'invoice_card',
+              items: [_invoiceToChatCard(matchingInvoice)],
+            ),
+          );
+        }
+      }
+    } on ApiException catch (error) {
+      errorMessage = _humanizeAgentError(error);
+    } finally {
+      isSending = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> _ensureSession(AppSession session) async {
     if (_sessionId != null) return;
 
@@ -273,5 +371,34 @@ class ChatController extends ChangeNotifier {
     }
 
     return 'The care assistant could not complete that request right now.';
+  }
+
+  InvoiceItem? _findMatchingInvoice(
+    List<InvoiceItem> invoices, {
+    required String sourceType,
+    required int sourceId,
+  }) {
+    final normalized = sourceType.trim().toUpperCase();
+    for (final invoice in invoices) {
+      if (normalized == 'APPOINTMENT' && invoice.appointmentId == sourceId) {
+        return invoice;
+      }
+      if (normalized == 'DIAGNOSTIC' && invoice.diagnosticOrderId == sourceId) {
+        return invoice;
+      }
+    }
+    return null;
+  }
+
+  ChatCardItem _invoiceToChatCard(InvoiceItem invoice) {
+    return ChatCardItem(
+      title: invoice.title,
+      subtitle: invoice.invoiceType,
+      description: invoice.subtitle,
+      badge: invoice.amount,
+      documentId: invoice.id,
+      downloadPath: invoice.downloadPath,
+      fileName: invoice.fileName,
+    );
   }
 }

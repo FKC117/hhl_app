@@ -4,6 +4,8 @@ import '../../app/theme.dart';
 import '../../core/session/app_session_scope.dart';
 import '../chat/data/chat_models.dart';
 import '../chat/logic/chat_controller.dart';
+import '../invoices/data/invoice_item.dart';
+import '../invoices/logic/invoice_download_controller.dart';
 
 class ChatHomeScreen extends StatefulWidget {
   const ChatHomeScreen({super.key, this.onOpenSection});
@@ -18,6 +20,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatController _controller = ChatController();
+  final InvoiceDownloadController _invoiceDownloadController =
+      InvoiceDownloadController();
 
   static const _quickPrompts = <_QuickPrompt>[
     _QuickPrompt(
@@ -50,11 +54,13 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   void initState() {
     super.initState();
     _controller.addListener(_handleControllerChanged);
+    _invoiceDownloadController.addListener(_handleInvoiceDownloadChanged);
   }
 
   @override
   void dispose() {
     _controller.removeListener(_handleControllerChanged);
+    _invoiceDownloadController.removeListener(_handleInvoiceDownloadChanged);
     _controller.dispose();
     _messageController.dispose();
     _scrollController.dispose();
@@ -74,6 +80,11 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
     });
   }
 
+  void _handleInvoiceDownloadChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<void> _sendMessage([
     String? seededPrompt,
     String? displayText,
@@ -91,6 +102,12 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   }
 
   Future<void> _handleCardAction(ChatCardItem item) async {
+    if (item.paymentSourceType.isNotEmpty && item.paymentConfirmUrl.isNotEmpty) {
+      final session = AppSessionScope.of(context);
+      await _controller.completePayment(item: item, session: session);
+      return;
+    }
+
     if (item.blockType == 'date_picker') {
       final request = await _pickBackendRequestedDate(item);
       if (request != null && request.command.trim().isNotEmpty) {
@@ -121,6 +138,40 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
     if (item.actionPrompt.isNotEmpty) {
       await _sendMessage(item.actionPrompt);
+    }
+  }
+
+  Future<void> _downloadInvoice(ChatCardItem item) async {
+    if (item.downloadPath.isEmpty || item.documentId <= 0) {
+      return;
+    }
+
+    final session = AppSessionScope.of(context);
+    await _invoiceDownloadController.download(
+      session: session,
+      invoice: InvoiceItem(
+        id: item.documentId,
+        title: item.title,
+        subtitle: item.description.isNotEmpty ? item.description : item.subtitle,
+        status: 'available',
+        invoiceType: item.subtitle.isNotEmpty ? item.subtitle : 'Invoice',
+        amount: item.badge,
+        fileName: item.fileName.isNotEmpty ? item.fileName : 'invoice_${item.documentId}.pdf',
+        appointmentId: 0,
+        diagnosticOrderId: 0,
+      ),
+    );
+
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (_invoiceDownloadController.message != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(_invoiceDownloadController.message!)),
+      );
+    } else if (_invoiceDownloadController.errorMessage != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(_invoiceDownloadController.errorMessage!)),
+      );
     }
   }
 
@@ -205,6 +256,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                 onOpenSection: widget.onOpenSection,
                 onQuickReply: _sendMessage,
                 onCardAction: _handleCardAction,
+                onInvoiceDownload: _downloadInvoice,
+                activeInvoiceId: _invoiceDownloadController.activeInvoiceId,
                 onConfirmJob: _confirmJob,
                 onCancelJob: _cancelJob,
               ),
@@ -273,6 +326,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
               onOpenSection: widget.onOpenSection,
               onQuickReply: _sendMessage,
               onCardAction: _handleCardAction,
+              onInvoiceDownload: _downloadInvoice,
+              activeInvoiceId: _invoiceDownloadController.activeInvoiceId,
               onConfirmJob: _confirmJob,
               onCancelJob: _cancelJob,
             ),
@@ -297,6 +352,8 @@ class _ChatSurface extends StatelessWidget {
     required this.errorMessage,
     required this.onQuickReply,
     required this.onCardAction,
+    required this.onInvoiceDownload,
+    required this.activeInvoiceId,
     required this.onConfirmJob,
     required this.onCancelJob,
     this.onOpenSection,
@@ -308,6 +365,8 @@ class _ChatSurface extends StatelessWidget {
   final String? errorMessage;
   final ValueChanged<String> onQuickReply;
   final Future<void> Function(ChatCardItem item) onCardAction;
+  final Future<void> Function(ChatCardItem item) onInvoiceDownload;
+  final int? activeInvoiceId;
   final Future<void> Function(String jobId) onConfirmJob;
   final Future<void> Function(String jobId) onCancelJob;
   final ValueChanged<String>? onOpenSection;
@@ -340,6 +399,8 @@ class _ChatSurface extends StatelessWidget {
                   previousUserPrompt: previousUserPrompt,
                   onQuickReply: onQuickReply,
                   onCardAction: onCardAction,
+                  onInvoiceDownload: onInvoiceDownload,
+                  activeInvoiceId: activeInvoiceId,
                   onConfirmJob: onConfirmJob,
                   onCancelJob: onCancelJob,
                   onOpenSection: onOpenSection,
@@ -518,6 +579,8 @@ class _MessageBubble extends StatelessWidget {
     required this.previousUserPrompt,
     required this.onQuickReply,
     required this.onCardAction,
+    required this.onInvoiceDownload,
+    required this.activeInvoiceId,
     required this.onConfirmJob,
     required this.onCancelJob,
     this.onOpenSection,
@@ -527,6 +590,8 @@ class _MessageBubble extends StatelessWidget {
   final String previousUserPrompt;
   final ValueChanged<String> onQuickReply;
   final Future<void> Function(ChatCardItem item) onCardAction;
+  final Future<void> Function(ChatCardItem item) onInvoiceDownload;
+  final int? activeInvoiceId;
   final Future<void> Function(String jobId) onConfirmJob;
   final Future<void> Function(String jobId) onCancelJob;
   final ValueChanged<String>? onOpenSection;
@@ -599,9 +664,13 @@ class _MessageBubble extends StatelessWidget {
                           for (final item in visibleItems) ...[
                             _AgentCard(
                               item: item,
-                              onAction: item.actionPrompt.isEmpty
-                                  ? null
-                                  : () => onCardAction(item),
+                              onAction: _isInteractiveChatItem(item)
+                                  ? () => onCardAction(item)
+                                  : null,
+                              onDownload: item.downloadPath.isNotEmpty
+                                  ? () => onInvoiceDownload(item)
+                                  : null,
+                              isDownloading: activeInvoiceId == item.documentId,
                               onOpenSection: () {
                                 final section = _sectionForType(message.messageType);
                                 if (section != null) {
@@ -772,11 +841,15 @@ class _AgentCard extends StatelessWidget {
   const _AgentCard({
     required this.item,
     this.onAction,
+    this.onDownload,
+    this.isDownloading = false,
     this.onOpenSection,
   });
 
   final ChatCardItem item;
   final VoidCallback? onAction;
+  final VoidCallback? onDownload;
+  final bool isDownloading;
   final VoidCallback? onOpenSection;
 
   @override
@@ -865,6 +938,25 @@ class _AgentCard extends StatelessWidget {
                 child: FilledButton.tonal(
                   onPressed: onAction,
                   child: Text(item.actionLabel),
+                ),
+              ),
+            ],
+            if (item.downloadPath.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: isDownloading ? null : onDownload,
+                  icon: isDownloading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_rounded),
+                  label: Text(
+                    isDownloading ? 'Downloading' : 'Download invoice',
+                  ),
                 ),
               ),
             ],
@@ -1246,6 +1338,12 @@ bool _isBookableSlotItem(ChatCardItem item) {
       prompt.startsWith('book schedule');
 }
 
+bool _isInteractiveChatItem(ChatCardItem item) {
+  return item.actionPrompt.isNotEmpty ||
+      item.paymentSourceType.isNotEmpty ||
+      item.blockType == 'date_picker';
+}
+
 String _preferredPeriodFromPrompt(String prompt) {
   final normalized = prompt.toLowerCase();
   if (normalized.contains(' morning')) return 'morning';
@@ -1290,6 +1388,9 @@ int? _extractHourFromDisplayText(String text) {
 
 bool _shouldShowActionControls(ChatMessageRecord message) {
   if (message.actionId == null) return false;
+  if (message.items.any((item) => item.paymentSourceType.isNotEmpty)) {
+    return false;
+  }
 
   final haystack = [
     message.messageType,

@@ -214,6 +214,59 @@ class ChatRepository {
     return ChatSendResult(messages: decorated, jobId: null);
   }
 
+  Future<int> initiateManualPayment({
+    required String sourceType,
+    required String sourceId,
+    required String gateway,
+    required String accessToken,
+    String initiateUrl = '/api/v1/payments/initiate/',
+  }) async {
+    final json = await _apiClient.postJson(
+      ApiConfig.apiRootUrl,
+      initiateUrl,
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {
+        'source_type': sourceType,
+        'source_id': int.tryParse(sourceId) ?? sourceId,
+        'gateway': gateway.isEmpty ? 'manual' : gateway,
+      },
+    );
+
+    final paymentId =
+        json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}') ?? 0;
+    if (paymentId <= 0) {
+      throw const ApiException('Payment initiation succeeded without a valid payment id.');
+    }
+    return paymentId;
+  }
+
+  Future<void> completeManualPayment({
+    required int paymentId,
+    required String accessToken,
+    String completeUrlTemplate = '/api/v1/payments/{payment_id}/complete/',
+  }) async {
+    final completeUrl = completeUrlTemplate.replaceAll('{payment_id}', '$paymentId');
+    await _apiClient.postJson(
+      ApiConfig.apiRootUrl,
+      completeUrl,
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> confirmPaymentSource({
+    required String confirmUrl,
+    required int paymentId,
+    required String accessToken,
+  }) {
+    return _apiClient.postJson(
+      ApiConfig.apiRootUrl,
+      confirmUrl,
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {'payment_id': paymentId},
+    );
+  }
+
   Future<Map<String, dynamic>> _getWithFallback({
     required String accessToken,
     required List<_EndpointCandidate> candidates,

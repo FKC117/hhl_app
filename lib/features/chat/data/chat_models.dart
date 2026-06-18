@@ -137,6 +137,16 @@ class ChatCardItem {
     this.blockType = '',
     this.submitPrefix = '',
     this.minDate = '',
+    this.paymentSourceType = '',
+    this.paymentSourceId = '',
+    this.paymentGateway = '',
+    this.paymentInitiateUrl = '',
+    this.paymentCompleteUrlTemplate = '',
+    this.paymentConfirmUrl = '',
+    this.paymentSuccessMessage = '',
+    this.documentId = 0,
+    this.downloadPath = '',
+    this.fileName = '',
   });
 
   final String title;
@@ -151,6 +161,16 @@ class ChatCardItem {
   final String blockType;
   final String submitPrefix;
   final String minDate;
+  final String paymentSourceType;
+  final String paymentSourceId;
+  final String paymentGateway;
+  final String paymentInitiateUrl;
+  final String paymentCompleteUrlTemplate;
+  final String paymentConfirmUrl;
+  final String paymentSuccessMessage;
+  final int documentId;
+  final String downloadPath;
+  final String fileName;
 
   factory ChatCardItem.fromDynamic(dynamic raw) {
     if (raw is String) {
@@ -226,6 +246,24 @@ class ChatCardItem {
       blockType: '${raw['block_type'] ?? ''}'.trim(),
       submitPrefix: '${raw['submit_prefix'] ?? ''}'.trim(),
       minDate: '${raw['min_date'] ?? ''}'.trim(),
+      paymentSourceType: '${raw['payment_source_type'] ?? ''}'.trim(),
+      paymentSourceId: '${raw['payment_source_id'] ?? ''}'.trim(),
+      paymentGateway: '${raw['payment_gateway'] ?? ''}'.trim(),
+      paymentInitiateUrl: '${raw['payment_initiate_url'] ?? ''}'.trim(),
+      paymentCompleteUrlTemplate:
+          '${raw['payment_complete_url_template'] ?? ''}'.trim(),
+      paymentConfirmUrl: '${raw['payment_confirm_url'] ?? ''}'.trim(),
+      paymentSuccessMessage: '${raw['payment_success_message'] ?? ''}'.trim(),
+      documentId: raw['document_id'] is int
+          ? raw['document_id'] as int
+          : int.tryParse('${raw['document_id'] ?? raw['id'] ?? '0'}') ?? 0,
+      downloadPath: _normalizeDownloadPath(
+        _firstNonEmpty([
+          '${raw['download_path'] ?? ''}',
+          '${raw['download_url'] ?? ''}',
+        ]),
+      ),
+      fileName: '${raw['file_name'] ?? ''}'.trim(),
     );
   }
 }
@@ -366,6 +404,18 @@ String _normalizeRole(String raw) {
     return 'assistant';
   }
   return value.isEmpty ? 'assistant' : value;
+}
+
+String _normalizeDownloadPath(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty || value.toLowerCase() == 'null') {
+    return '';
+  }
+  final uri = Uri.tryParse(value);
+  if (uri != null && uri.hasScheme) {
+    return uri.path;
+  }
+  return value;
 }
 
 String _formatDisplayTime(dynamic raw) {
@@ -577,6 +627,16 @@ List<dynamic>? _extractItemsFromBlocks(dynamic raw) {
                 ? 'No gateway yet. Tapping continue will mark this as paid.'
                 : '',
           ]),
+          'action_label': type == 'payment_handoff' ? 'Continue' : '',
+          'block_type': type,
+          'payment_source_type': '${summaryMap['source_type'] ?? ''}'.trim(),
+          'payment_source_id': '${summaryMap['source_id'] ?? ''}'.trim(),
+          'payment_gateway': '${summaryMap['gateway'] ?? 'manual'}'.trim(),
+          'payment_initiate_url': '${data['initiate_url'] ?? ''}'.trim(),
+          'payment_complete_url_template':
+              '${data['complete_url_template'] ?? ''}'.trim(),
+          'payment_confirm_url': '${data['confirm_url'] ?? ''}'.trim(),
+          'payment_success_message': '${data['success_message'] ?? ''}'.trim(),
         });
       }
 

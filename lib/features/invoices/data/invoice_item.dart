@@ -9,11 +9,15 @@ class InvoiceItem extends DocumentItem {
     required this.invoiceType,
     required this.amount,
     required this.fileName,
+    required this.appointmentId,
+    required this.diagnosticOrderId,
   }) : super(sourceName: invoiceType, downloadPath: '/invoices/$id/download/');
 
   final String invoiceType;
   final String amount;
   final String fileName;
+  final int appointmentId;
+  final int diagnosticOrderId;
 
   factory InvoiceItem.fromJson(Map<String, dynamic> json) {
     final id = json['id'] is int
@@ -50,6 +54,12 @@ class InvoiceItem extends DocumentItem {
         '${json['invoice_number'] ?? ''}.pdf',
         'invoice_$id.pdf',
       ]),
+      appointmentId: json['appointment'] is int
+          ? json['appointment'] as int
+          : int.tryParse('${json['appointment']}') ?? 0,
+      diagnosticOrderId: json['diagnostic_order'] is int
+          ? json['diagnostic_order'] as int
+          : int.tryParse('${json['diagnostic_order']}') ?? 0,
     );
   }
 }
