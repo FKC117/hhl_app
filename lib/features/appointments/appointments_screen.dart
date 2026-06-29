@@ -43,7 +43,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _filters.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final item = _filters[index];
               return ChoiceChip(

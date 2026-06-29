@@ -1,6 +1,7 @@
 import '../../../core/api/api_client.dart';
 import '../../../core/config/api_config.dart';
 import 'doctor.dart';
+import 'doctor_schedule_management.dart';
 
 class DoctorRepository {
   DoctorRepository({ApiClient? apiClient})
@@ -60,6 +61,78 @@ class DoctorRepository {
       '/doctors/$doctorId/',
     );
     return Doctor.fromJson(json);
+  }
+
+  Future<MyDoctorProfile> fetchMyDoctorProfile({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.getJson(
+      ApiConfig.apiBaseUrl,
+      '/doctors/me/',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return MyDoctorProfile.fromJson(json);
+  }
+
+  Future<List<MyDoctorSchedule>> fetchMySchedules({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.getJson(
+      ApiConfig.apiBaseUrl,
+      '/doctors/me/schedules/',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    final dynamic raw = json['results'] ?? json['data'] ?? json;
+    if (raw is List) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(MyDoctorSchedule.fromJson)
+          .where((item) => item.id > 0)
+          .toList();
+    }
+
+    return const [];
+  }
+
+  Future<MyDoctorProfile> updateMyDoctorProfile({
+    required Map<String, dynamic> payload,
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.patchJson(
+      ApiConfig.apiBaseUrl,
+      '/doctors/me/',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: payload,
+    );
+    return MyDoctorProfile.fromJson(json);
+  }
+
+  Future<MyDoctorSchedule> createMySchedule({
+    required Map<String, dynamic> payload,
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.postJson(
+      ApiConfig.apiBaseUrl,
+      '/doctors/me/schedules/',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: payload,
+    );
+    return MyDoctorSchedule.fromJson(json);
+  }
+
+  Future<MyDoctorSchedule> updateMySchedule({
+    required int scheduleId,
+    required Map<String, dynamic> payload,
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.patchJson(
+      ApiConfig.apiBaseUrl,
+      '/doctors/me/schedules/$scheduleId/',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: payload,
+    );
+    return MyDoctorSchedule.fromJson(json);
   }
 
   List<dynamic> _extractList(Map<String, dynamic> json) {

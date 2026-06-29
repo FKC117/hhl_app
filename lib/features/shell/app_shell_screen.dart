@@ -6,6 +6,7 @@ import '../../core/session/app_session_scope.dart';
 import '../ambulance/ambulance_screen.dart';
 import '../appointments/appointments_screen.dart';
 import '../diagnostics/diagnostics_screen.dart';
+import '../doctors/doctor_workspace_screen.dart';
 import '../doctors/doctors_screen.dart';
 import '../home/chat_home_screen.dart';
 import '../invoices/invoices_screen.dart';
@@ -149,6 +150,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
   @override
   Widget build(BuildContext context) {
     final session = AppSessionScope.of(context);
+    final role = session.currentUser?.role.trim().toUpperCase();
+    if (role == 'DOCTOR') {
+      return const DoctorWorkspaceScreen();
+    }
     final wide = MediaQuery.of(context).size.width >= 1100;
     final current = _destinations[_currentIndex];
 
@@ -588,3 +593,4 @@ class _QuickLink {
   final String sectionKey;
   final Color color;
 }
+

@@ -357,32 +357,30 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
     if (compact) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
         child: Column(
           children: [
+            const _CompactChatHeader(),
+            const SizedBox(height: 8),
             SizedBox(
-              height: 40,
+              height: 44,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _quickPrompts.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
                   final prompt = _quickPrompts[index];
-                  return ActionChip(
-                    avatar: Icon(
-                      prompt.icon,
-                      size: 18,
-                      color: AppColors.primaryDark,
-                    ),
-                    label: Text(prompt.title),
-                    onPressed: () => _handlePrompt(prompt),
+                  return _CompactPromptChip(
+                    prompt: prompt,
+                    onTap: () => _handlePrompt(prompt),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Expanded(
               child: _ChatSurface(
+                isCompact: true,
                 scrollController: _scrollController,
                 messages: messages,
                 isSending: _controller.isSending,
@@ -398,8 +396,9 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
               ),
             ),
             if (_selectedDiagnosticTests.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               _DiagnosticSelectionPanel(
+                compact: true,
                 tests: _selectedDiagnosticTests.values.toList(),
                 labName: _selectedDiagnosticLabName,
                 total: _selectedDiagnosticTotal,
@@ -415,8 +414,9 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                 },
               ),
             ],
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _Composer(
+              compact: true,
               controller: _messageController,
               onSend: _sendMessage,
               isBusy: _controller.isSending,
@@ -472,6 +472,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
           const SizedBox(height: 14),
           Expanded(
             child: _ChatSurface(
+              isCompact: false,
               scrollController: _scrollController,
               messages: messages,
               isSending: _controller.isSending,
@@ -489,6 +490,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
           if (_selectedDiagnosticTests.isNotEmpty) ...[
             const SizedBox(height: 12),
             _DiagnosticSelectionPanel(
+              compact: false,
               tests: _selectedDiagnosticTests.values.toList(),
               labName: _selectedDiagnosticLabName,
               total: _selectedDiagnosticTotal,
@@ -506,6 +508,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
           ],
           const SizedBox(height: 12),
           _Composer(
+            compact: false,
             controller: _messageController,
             onSend: _sendMessage,
             isBusy: _controller.isSending,
@@ -518,6 +521,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
 class _ChatSurface extends StatelessWidget {
   const _ChatSurface({
+    required this.isCompact,
     required this.scrollController,
     required this.messages,
     required this.isSending,
@@ -532,6 +536,7 @@ class _ChatSurface extends StatelessWidget {
     this.onOpenSection,
   });
 
+  final bool isCompact;
   final ScrollController scrollController;
   final List<ChatMessageRecord> messages;
   final bool isSending;
@@ -550,17 +555,22 @@ class _ChatSurface extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        color: isCompact ? Colors.transparent : Colors.white,
+        borderRadius: BorderRadius.circular(isCompact ? 18 : 24),
       ),
       child: Column(
         children: [
           Expanded(
             child: ListView.separated(
               controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+              padding: EdgeInsets.fromLTRB(
+                isCompact ? 2 : 14,
+                isCompact ? 10 : 16,
+                isCompact ? 2 : 14,
+                isCompact ? 16 : 16,
+              ),
               itemCount: messages.length + (isSending ? 1 : 0),
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => SizedBox(height: isCompact ? 12 : 12),
               itemBuilder: (context, index) {
                 if (index >= messages.length) {
                   return const _TypingBubble();
@@ -569,6 +579,7 @@ class _ChatSurface extends StatelessWidget {
                 final message = messages[index];
                 final previousUserPrompt = _previousUserPrompt(messages, index);
                 return _MessageBubble(
+                  isCompact: isCompact,
                   message: message,
                   previousUserPrompt: previousUserPrompt,
                   onQuickReply: onQuickReply,
@@ -750,6 +761,7 @@ class _StatusRow extends StatelessWidget {
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
+    required this.isCompact,
     required this.message,
     required this.previousUserPrompt,
     required this.onQuickReply,
@@ -762,6 +774,7 @@ class _MessageBubble extends StatelessWidget {
     this.onOpenSection,
   });
 
+  final bool isCompact;
   final ChatMessageRecord message;
   final String previousUserPrompt;
   final ValueChanged<String> onQuickReply;
@@ -797,45 +810,86 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (isAssistant) ...[
-            const CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(0xFFD9EFEB),
-              foregroundColor: AppColors.primaryDark,
-              child: Icon(Icons.auto_awesome_outlined, size: 16),
+            Container(
+              width: isCompact ? 28 : 32,
+              height: isCompact ? 28 : 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2F4EF),
+                borderRadius: BorderRadius.circular(isCompact ? 10 : 12),
+                border: Border.all(color: const Color(0xFFD4E9E4)),
+              ),
+              child: Icon(
+                Icons.auto_awesome_rounded,
+                size: isCompact ? 15 : 16,
+                color: AppColors.primaryDark,
+              ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: isCompact ? 8 : 10),
           ],
           Flexible(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 680),
+              constraints: BoxConstraints(maxWidth: isCompact ? 332 : 680),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: isAssistant
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.end,
                 children: [
+                  if (isAssistant) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 2, bottom: 6),
+                      child: Text(
+                        'HHL assistant',
+                        style: TextStyle(
+                          color: const Color(0xFF6C8884),
+                          fontSize: isCompact ? 11.5 : 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                  ],
                   if (message.text.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isCompact ? 14 : 16,
+                        vertical: isCompact ? 11 : 13,
                       ),
                       decoration: BoxDecoration(
                         color: isAssistant
-                            ? const Color(0xFFF7FAF9)
+                            ? Colors.white
                             : AppColors.primary,
-                        borderRadius: BorderRadius.circular(22),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(
+                            isAssistant ? 8 : (isCompact ? 20 : 22),
+                          ),
+                          topRight: Radius.circular(
+                            isAssistant ? (isCompact ? 20 : 22) : 8,
+                          ),
+                          bottomLeft: Radius.circular(isCompact ? 20 : 22),
+                          bottomRight: Radius.circular(isCompact ? 20 : 22),
+                        ),
                         border: isAssistant
-                            ? Border.all(color: const Color(0xFFE0EBE9))
+                            ? Border.all(color: const Color(0xFFDDEAE7))
                             : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0x140D3B36),
+                            blurRadius: isCompact ? 10 : 14,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: Text(
                         message.text,
                         style: TextStyle(
                           color: isAssistant ? AppColors.ink : Colors.white,
                           height: 1.4,
+                          fontSize: isCompact ? 15 : 16,
                         ),
                       ),
                     ),
                   if (visibleItems.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+                    SizedBox(height: isCompact ? 6 : 8),
                     if (hasSlotCards)
                       _SlotCardScroller(
                         items: visibleItems,
@@ -846,6 +900,7 @@ class _MessageBubble extends StatelessWidget {
                         children: [
                           if (dateSuggestionItems.isNotEmpty) ...[
                             _DateSuggestionScroller(
+                              compact: isCompact,
                               items: dateSuggestionItems,
                               onCardAction: onCardAction,
                             ),
@@ -854,6 +909,7 @@ class _MessageBubble extends StatelessWidget {
                           ],
                           for (final item in nonDateSuggestionItems) ...[
                             _AgentCard(
+                              compact: isCompact,
                               item: item,
                               onAction: _isInteractiveChatItem(item)
                                   ? () => onCardAction(item)
@@ -880,25 +936,36 @@ class _MessageBubble extends StatelessWidget {
                       ),
                   ],
                   if (message.quickReplies.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    SizedBox(height: isCompact ? 8 : 10),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: isCompact ? 6 : 8,
+                      runSpacing: isCompact ? 6 : 8,
                       children: [
                         for (final reply in message.quickReplies)
-                          ActionChip(
-                            label: Text(reply),
-                            onPressed: () => onQuickReply(reply),
+                          _QuickReplyPill(
+                            label: reply,
+                            compact: isCompact,
+                            onTap: () => onQuickReply(reply),
                           ),
                       ],
                     ),
                   ],
                   if (_shouldShowActionControls(message)) ...[
-                    const SizedBox(height: 10),
+                    SizedBox(height: isCompact ? 8 : 10),
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton(
+                            style: isCompact
+                                ? OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  )
+                                : null,
                             onPressed: () => onCancelJob(message.actionId!),
                             child: Text(_secondaryActionLabel(message)),
                           ),
@@ -906,6 +973,16 @@ class _MessageBubble extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: FilledButton(
+                            style: isCompact
+                                ? FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  )
+                                : null,
                             onPressed: () => onConfirmJob(message.actionId!),
                             child: Text(_primaryActionLabel(message)),
                           ),
@@ -1035,10 +1112,12 @@ class _SlotCardScrollerState extends State<_SlotCardScroller> {
 
 class _DateSuggestionScroller extends StatefulWidget {
   const _DateSuggestionScroller({
+    required this.compact,
     required this.items,
     required this.onCardAction,
   });
 
+  final bool compact;
   final List<ChatCardItem> items;
   final Future<void> Function(ChatCardItem item) onCardAction;
 
@@ -1053,7 +1132,7 @@ class _DateSuggestionScrollerState extends State<_DateSuggestionScroller> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: 0.8);
+    _pageController = PageController(viewportFraction: widget.compact ? 0.72 : 0.8);
   }
 
   @override
@@ -1070,7 +1149,7 @@ class _DateSuggestionScrollerState extends State<_DateSuggestionScroller> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          height: 210,
+          height: widget.compact ? 168 : 210,
           child: PageView.builder(
             controller: _pageController,
             itemCount: pageCount,
@@ -1082,6 +1161,7 @@ class _DateSuggestionScrollerState extends State<_DateSuggestionScroller> {
               return Padding(
                 padding: EdgeInsets.only(right: index == pageCount - 1 ? 0 : 10),
                 child: _AgentCard(
+                  compact: widget.compact,
                   item: item,
                   onAction: item.actionPrompt.isEmpty
                       ? null
@@ -1145,6 +1225,7 @@ class _DateSuggestionScrollerState extends State<_DateSuggestionScroller> {
 
 class _AgentCard extends StatelessWidget {
   const _AgentCard({
+    this.compact = false,
     required this.item,
     this.onAction,
     this.actionLabelOverride,
@@ -1153,6 +1234,7 @@ class _AgentCard extends StatelessWidget {
     this.onOpenSection,
   });
 
+  final bool compact;
   final ChatCardItem item;
   final VoidCallback? onAction;
   final String? actionLabelOverride;
@@ -1167,14 +1249,23 @@ class _AgentCard extends StatelessWidget {
 
     return InkWell(
       onTap: primaryTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(compact ? 18 : 18),
       child: Ink(
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(compact ? 12 : 14),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          color: compact ? const Color(0xFFFCFEFD) : Colors.white,
+          borderRadius: BorderRadius.circular(compact ? 18 : 18),
           border: Border.all(color: const Color(0xFFDCE8E6)),
+          boxShadow: compact
+              ? const [
+                  BoxShadow(
+                    color: Color(0x0F0D3B36),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1184,10 +1275,13 @@ class _AgentCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     item.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.ink,
                       fontWeight: FontWeight.w700,
+                      fontSize: compact ? 15 : 16,
                     ),
+                    maxLines: compact ? 2 : null,
+                    overflow: compact ? TextOverflow.ellipsis : null,
                   ),
                 ),
                 if (item.badge.isNotEmpty)
@@ -1200,11 +1294,11 @@ class _AgentCard extends StatelessWidget {
                       color: const Color(0xFFE5F5F1),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
-                      item.badge,
-                      style: const TextStyle(
-                        color: AppColors.primaryDark,
-                        fontWeight: FontWeight.w700,
+                  child: Text(
+                    item.badge,
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
                     ),
@@ -1212,7 +1306,7 @@ class _AgentCard extends StatelessWidget {
               ],
             ),
             if (item.subtitle.isNotEmpty) ...[
-              const SizedBox(height: 4),
+              SizedBox(height: compact ? 3 : 4),
               Text(
                 item.subtitle,
                 style: const TextStyle(
@@ -1223,14 +1317,19 @@ class _AgentCard extends StatelessWidget {
               ),
             ],
             if (item.description.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              SizedBox(height: compact ? 5 : 6),
               Text(
                 item.description,
-                style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: compact ? 12.5 : 13,
+                ),
+                maxLines: compact ? 4 : null,
+                overflow: compact ? TextOverflow.ellipsis : null,
               ),
             ],
             if (item.trailing.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              SizedBox(height: compact ? 8 : 10),
               Text(
                 item.trailing,
                 style: const TextStyle(
@@ -1241,20 +1340,42 @@ class _AgentCard extends StatelessWidget {
               ),
             ],
             if (actionLabel.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
+              SizedBox(height: compact ? 10 : 12),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: FilledButton.tonal(
+                  style: compact
+                      ? FilledButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: const TextStyle(fontSize: 14),
+                        )
+                      : null,
                   onPressed: onAction,
                   child: Text(actionLabel),
                 ),
               ),
             ],
             if (item.downloadPath.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
+              SizedBox(height: compact ? 10 : 12),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
+                  style: compact
+                      ? OutlinedButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: const TextStyle(fontSize: 14),
+                        )
+                      : null,
                   onPressed: isDownloading ? null : onDownload,
                   icon: isDownloading
                       ? const SizedBox(
@@ -1454,19 +1575,39 @@ class _TypingBubble extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CircleAvatar(
-          radius: 16,
-          backgroundColor: Color(0xFFD9EFEB),
-          foregroundColor: AppColors.primaryDark,
-          child: Icon(Icons.auto_awesome_outlined, size: 16),
-        ),
-        const SizedBox(width: 10),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(
-            color: const Color(0xFFF7FAF9),
-            borderRadius: BorderRadius.circular(22),
+            color: const Color(0xFFE2F4EF),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFD4E9E4)),
+          ),
+          child: const Icon(
+            Icons.auto_awesome_rounded,
+            size: 15,
+            color: AppColors.primaryDark,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(8),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+              bottomRight: Radius.circular(20),
+            ),
             border: Border.all(color: const Color(0xFFE0EBE9)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140D3B36),
+                blurRadius: 10,
+                offset: Offset(0, 3),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1502,6 +1643,7 @@ class _TypingDot extends StatelessWidget {
 
 class _DiagnosticSelectionPanel extends StatelessWidget {
   const _DiagnosticSelectionPanel({
+    this.compact = false,
     required this.tests,
     required this.labName,
     required this.total,
@@ -1512,6 +1654,7 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
     required this.onClear,
   });
 
+  final bool compact;
   final List<ChatCardItem> tests;
   final String labName;
   final String total;
@@ -1531,10 +1674,10 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FBFA),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(compact ? 18 : 22),
         border: Border.all(color: const Color(0xFFDCE8E6)),
       ),
       child: Column(
@@ -1542,12 +1685,13 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Selected tests',
                   style: TextStyle(
                     color: AppColors.ink,
                     fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
               ),
@@ -1565,7 +1709,7 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-          const SizedBox(height: 10),
+          SizedBox(height: compact ? 8 : 10),
           OutlinedButton.icon(
             onPressed: isBusy ? null : onPickDate,
             icon: const Icon(Icons.calendar_month_outlined),
@@ -1575,38 +1719,48 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
                   : 'Preferred date: $preferredDate',
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: compact ? 6 : 8),
           Text(
             tests.map((item) => item.title).join(', '),
-            style: const TextStyle(color: AppColors.muted, height: 1.4),
+            style: TextStyle(
+              color: AppColors.muted,
+              height: 1.4,
+              fontSize: compact ? 13 : 14,
+            ),
           ),
           if (preparationNotes.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            const Text(
+            SizedBox(height: compact ? 8 : 10),
+            Text(
               'Preparation notes',
               style: TextStyle(
                 color: AppColors.ink,
                 fontWeight: FontWeight.w700,
+                fontSize: compact ? 14 : 15,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: compact ? 4 : 6),
             for (final note in preparationNotes) ...[
               Text(
-                '• $note',
-                style: const TextStyle(color: AppColors.muted, height: 1.4),
+                '- $note',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  height: 1.4,
+                  fontSize: compact ? 12.5 : 13,
+                ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: compact ? 3 : 4),
             ],
           ],
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 10 : 12),
           Row(
             children: [
               Expanded(
                 child: Text(
                   '${tests.length} test${tests.length == 1 ? '' : 's'} selected',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.ink,
                     fontWeight: FontWeight.w600,
+                    fontSize: compact ? 13 : 14,
                   ),
                 ),
               ),
@@ -1631,7 +1785,7 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 10 : 12),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
@@ -1649,11 +1803,13 @@ class _DiagnosticSelectionPanel extends StatelessWidget {
 
 class _Composer extends StatelessWidget {
   const _Composer({
+    this.compact = false,
     required this.controller,
     required this.onSend,
     required this.isBusy,
   });
 
+  final bool compact;
   final TextEditingController controller;
   final Future<void> Function([String? seededPrompt]) onSend;
   final bool isBusy;
@@ -1661,14 +1817,43 @@ class _Composer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 14,
+        compact ? 8 : 10,
+        compact ? 12 : 14,
+        compact ? 10 : 12,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFA),
-        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(compact ? 18 : 22),
         border: Border.all(color: const Color(0xFFDCE8E6)),
+        boxShadow: compact
+            ? const [
+                BoxShadow(
+                  color: Color(0x120D3B36),
+                  blurRadius: 14,
+                  offset: Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          Container(
+            width: compact ? 40 : 44,
+            height: compact ? 40 : 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F8F7),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.mode_comment_outlined,
+              size: compact ? 20 : 22,
+              color: AppColors.muted,
+            ),
+          ),
+          SizedBox(width: compact ? 10 : 12),
           Expanded(
             child: TextField(
               controller: controller,
@@ -1676,10 +1861,10 @@ class _Composer extends StatelessWidget {
               minLines: 1,
               maxLines: 4,
               textInputAction: TextInputAction.send,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText:
                     'Ask about symptoms, appointments, diagnostics, or invoices...',
-                prefixIcon: Icon(Icons.mode_comment_outlined),
+                isCollapsed: true,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
@@ -1687,14 +1872,167 @@ class _Composer extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            onPressed: isBusy ? null : () => onSend(),
-            icon: Icon(
-              isBusy ? Icons.hourglass_top_rounded : Icons.arrow_upward_rounded,
+          SizedBox(width: compact ? 6 : 8),
+          Container(
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: isBusy ? null : () => onSend(),
+              icon: Icon(
+                isBusy ? Icons.hourglass_top_rounded : Icons.arrow_upward_rounded,
+                color: Colors.white,
+              ),
+              style: IconButton.styleFrom(
+                padding: EdgeInsets.all(compact ? 12 : 14),
+                shape: const CircleBorder(),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CompactChatHeader extends StatelessWidget {
+  const _CompactChatHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE5F5F1),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(
+            Icons.auto_awesome_rounded,
+            color: AppColors.primaryDark,
+            size: 22,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Care chat',
+                style: textTheme.titleMedium?.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Quick help for doctors, tests, bookings, and invoices',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CompactPromptChip extends StatelessWidget {
+  const _CompactPromptChip({
+    required this.prompt,
+    required this.onTap,
+  });
+
+  final _QuickPrompt prompt;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFDCE8E6)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                prompt.icon,
+                size: 18,
+                color: AppColors.primaryDark,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                prompt.title,
+                style: const TextStyle(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickReplyPill extends StatelessWidget {
+  const _QuickReplyPill({
+    required this.label,
+    required this.compact,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool compact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 14,
+            vertical: compact ? 9 : 10,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5FAF8),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFD8E7E3)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: AppColors.ink,
+              fontWeight: FontWeight.w600,
+              fontSize: compact ? 13 : 14,
+            ),
+          ),
+        ),
       ),
     );
   }

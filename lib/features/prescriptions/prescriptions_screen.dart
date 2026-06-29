@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../core/session/app_session_scope.dart';
 import 'data/prescription_item.dart';
+import 'doctor_prescription_screen.dart';
 import 'logic/prescription_download_controller.dart';
 import 'logic/prescriptions_controller.dart';
 
@@ -22,6 +23,11 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> {
   @override
   Widget build(BuildContext context) {
     final session = AppSessionScope.of(context);
+    final role = session.currentUser?.role.trim().toUpperCase();
+    if (role == 'DOCTOR') {
+      return DoctorPrescriptionScreen(session: session);
+    }
+
     if (_lastToken != session.accessToken) {
       _lastToken = session.accessToken;
       WidgetsBinding.instance.addPostFrameCallback((_) {
